@@ -1,46 +1,46 @@
-import sys
+import sys 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import explode, udf
-import re
-from itertools import combinations
-from pyspark.sql.types import StringType
+import ast
 # you may add more import if you need to
 
 # don't change this line
-hdfs_nn = sys.argv[1]
 
 spark = SparkSession.builder.appName("Assigment 2 Question 5").getOrCreate()
 # YOUR CODE GOES BELOW
-#f = spark.read.option("header",True)\
-#.parquet("hdfs://%s:9000/assignment2/part2/input/" % (hdfs_nn))
-#df.printSchema()
-#df.show()
 
-parquetFile = spark.read.option("header",True).parquet("hdfs://%s:9000/assignment2/part2/input/" % (hdfs_nn))
-#cast = parquetFile.collect()
 
-def getUniquePairs(cast):
-    uniquePairs = []
-    for row in cast:
-       # castList = row["cast"]
-        list = re.split('": |, |" | ' ' |"',cast)
-        list = [i for i in list if i]
-        names = []
-        i = 1
-        for j in list:
-            if j == "name":
-                names.append(list[i])
-            i +=1
-            uniquePairs.append([",".join(map(str, comb)) for comb in combinations(names, 2)])
-    return uniquePairs
+input = spark.read.option("header", True).option("inferSchema", "true")\
+.parquet("data/tmdb_5000_credits.parquet")
 
-udfGetUniquePairs = udf(lambda z:getUniquePairs(z), StringType())
+inputRdd = input.rdd
 
-df = parquetFile.withColumn("unique_Pairs", udfGetUniquePairs("cast"))
-dfOut = df.select("movie_id", "title", "unique_pairs")
-#dfOut.show()
-#parquetFile.withColumn('unique_pairs', uniquePairs).collect()
+# create new rdd with co-cast actors
+# create new rdd with co-cast actors
+# create new rdd with co-cast actors
+def extract_actors(line):
+    cast_ls = ast.literal_eval(line[2])
+    answer = []
+    actors = []
+    for i in range(len(cast_ls)-1):
+        for j in range(i+1,len(cast_ls)):
+            if cast_ls[i]["name"] > cast_ls[j]["name"]:
+                actor = cast_ls[i]["name"] + ',' + cast_ls[j]["name"]
+            else:
+                actor = cast_ls[j]["name"] + ',' + cast_ls[i]["name"]
+            if actor not in actors:
+                actors.append(actor)
+                answer.append((str(line[0]) +','+line[1], actor) )
+    return answer
 
-#df.write.csv("hdfs://%s:9000/assignment2/output/question5/" % (hdfs_nn), header=True) 
-dfOut.write.parquet("hdfs://%s:9000/assignment2/output/question5/" % (hdfs_nn))
+movieWithActors = inputRdd.flatMap(extract_actors)
 
+actorsCrossActors =movieWithActors.map(lambda line: (line[1], line[0]))
+
+counts = actorsCrossActors.map(lambda line: (line[0], 1)).reduceByKey(lambda x,y: x+y).filter(lambda line: line[1] >= 2).toDF()
+
+# 
+# actorsCrossActressMore2 = actorsCrossActors.join(counts).sortByKey().map(lambda line: (line[1][0].split(',')[0], line[1][0].split(',')[1], line[0].split(',')[0], line[0].split(',')[1])).distinct()
+# 
+# dfWithSchema = spark.createDataFrame(actorsCrossActressMore2).toDF("movie_id", "title", "actor1", "actor2")
+
+counts.write.option("header", True).csv("q5_4")
